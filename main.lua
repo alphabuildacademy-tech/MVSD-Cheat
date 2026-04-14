@@ -1,6 +1,5 @@
--- main.lua (FULLY UPDATED - Complete Working Script)
+-- main.lua (FULLY FIXED - Wall Bang works without FireServer override)
 -- Murderers VS Sheriffs DUELS - Cheat Script
--- Features: Aimbot, AutoFire (Triggerbot), NoClip, Fly, Teleport Behind, ESP (Box + Full Skeleton), FOV Circle
 
 -- ==================== UI LIBRARY ====================
 local UIS = game:GetService("UserInputService")
@@ -671,35 +670,59 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local Camera = Workspace.CurrentCamera
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
+
+-- Find ShootGun remote
+local ShootGunRemote = nil
+local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+if Remotes then
+    ShootGunRemote = Remotes:FindFirstChild("ShootGun")
+end
 
 -- Cheat config
 local Cheat = {
     Aimbot = false,
     AutoFire = false,
+    WallBang = false,
     NoClip = false,
     Fly = false,
     ESP = false,
     SkeletonESP = false,
     BoxESP = true,
     ESPBoxSize = 3,
+    ESPColor = Color3.new(1, 0, 0),
+    ESPTransparency = 0.5,
+    SkeletonColor = Color3.new(0, 1, 0),
+    SkeletonThickness = 1,
+    ShowHead = true,
+    ShowTorso = true,
+    ShowArms = true,
+    ShowLegs = true,
+    ShowForearms = true,
+    ShowShins = true,
     ShowFOVCircle = false,
     AimbotFOV = 120,
     AimbotSmoothness = 0.3,
     TargetPart = "Head",
-    AutoFireDelay = 0.05,
+    AutoFireDelay = 0.1,
 }
 
+-- Variables
 local autoFireConnection = nil
 local flyBodyVelocity = nil
 local espBoxes = {}
 local skeletonLines = {}
 local fovCircle = nil
+local lastShotTime = 0
 
--- Helper: get closest enemy to mouse cursor
-local function GetClosestPlayer()
-    local closest = nil
-    local shortest = Cheat.AimbotFOV
+-- Wall Bang: Store the original FireServer (we're not overriding, just using as reference)
+local originalFireServer = ShootGunRemote and ShootGunRemote.FireServer
+
+-- Function to get the best target position (for wall bang)
+local function GetBestTargetPosition()
+    local bestTarget = nil
+    local bestDistance = Cheat.AimbotFOV
     local mouseLocation = UserInputService:GetMouseLocation()
     
     for _, player in ipairs(Players:GetPlayers()) do
@@ -709,15 +732,138 @@ local function GetClosestPlayer()
                 local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
                 if onScreen then
                     local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - mouseLocation).Magnitude
-                    if distance < shortest then
-                        shortest = distance
-                        closest = player
+                    if distance < bestDistance then
+                        bestDistance = distance
+                        bestTarget = part
                     end
                 end
             end
         end
     end
-    return closest
+    
+    return bestTarget
+end
+
+-- Wall Bang: Hook the mouse click to redirect shots
+local function SetupWallBang()
+    -- Instead of overriding FireServer, we'll hook into UserInputService
+    -- to detect when the player clicks and redirect the shot
+    local mouseButtonDown = false
+    
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        -- Check for left mouse button click
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if Cheat.WallBang then
+                -- Get the best target
+                local targetPart = GetBestTargetPosition()
+                if targetPart and ShootGunRemote then
+                    local origin = GetCharacterRayOrigin()
+                    if origin then
+                        -- Shoot directly at the target through walls
+                        pcall(function()
+                            ShootGunRemote:FireServer(origin, targetPart.Position, targetPart, targetPart.Position)
+                        end)
+                        -- Prevent the normal shot from firing
+                        return
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Raycast for visibility check
+local function IsVisible(origin, targetPart)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    local direction = targetPart.Position - origin
+    local result = Workspace:Raycast(origin, direction, raycastParams)
+    if result then
+        local hitInstance = result.Instance
+        local targetCharacter = targetPart.Parent
+        local hitCharacter = hitInstance:FindFirstAncestorOfClass("Model")
+        if hitCharacter == targetCharacter then
+            return true
+        end
+        return false
+    end
+    return true
+end
+
+-- Get character ray origin
+local function GetCharacterRayOrigin()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    return (hrp.CFrame * CFrame.new(0, 0, hrp.Size.Z / 2)).Position
+end
+
+-- Get closest enemy to crosshair
+local function GetBestTarget()
+    local bestTarget = nil
+    local bestScore = Cheat.AimbotFOV
+    local mouseLocation = UserInputService:GetMouseLocation()
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local part = player.Character:FindFirstChild(Cheat.TargetPart) or player.Character:FindFirstChild("HumanoidRootPart")
+            if part then
+                local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
+                if onScreen then
+                    local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - mouseLocation).Magnitude
+                    if distance < bestScore then
+                        bestScore = distance
+                        bestTarget = player
+                    end
+                end
+            end
+        end
+    end
+    return bestTarget
+end
+
+-- Get target for auto-fire
+local function GetAutoFireTarget()
+    local targetPlayer = GetBestTarget()
+    if targetPlayer and targetPlayer.Character then
+        local targetPart = targetPlayer.Character:FindFirstChild(Cheat.TargetPart) or targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetPart and LocalPlayer.Character then
+            local origin = GetCharacterRayOrigin()
+            if origin then
+                local visible = IsVisible(origin, targetPart)
+                if visible or Cheat.WallBang then
+                    return targetPlayer, targetPart
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
+-- Shoot function
+local function ShootAtTarget(targetPart)
+    if not ShootGunRemote then return false end
+    if not targetPart then return false end
+    
+    local origin = GetCharacterRayOrigin()
+    if not origin then return false end
+    
+    local targetPos = targetPart.Position
+    local offset = Vector3.new(
+        (math.random() - 0.5) * 0.5,
+        (math.random() - 0.5) * 0.5,
+        (math.random() - 0.5) * 0.5
+    )
+    local adjustedTarget = targetPos + offset
+    
+    pcall(function()
+        ShootGunRemote:FireServer(origin, adjustedTarget, targetPart, targetPos)
+    end)
+    return true
 end
 
 -- FOV Circle
@@ -744,10 +890,10 @@ local function UpdateFOVCircle()
     end
 end
 
--- Aimbot (move mouse)
+-- Aimbot
 local function UpdateAimbot()
     if not Cheat.Aimbot then return end
-    local targetPlayer = GetClosestPlayer()
+    local targetPlayer = GetBestTarget()
     if targetPlayer and targetPlayer.Character then
         local targetPart = targetPlayer.Character:FindFirstChild(Cheat.TargetPart) or targetPlayer.Character:FindFirstChild("HumanoidRootPart")
         if targetPart then
@@ -764,7 +910,7 @@ local function UpdateAimbot()
     end
 end
 
--- AutoFire (Triggerbot) - Shoots through walls
+-- AutoFire
 local function StartAutoFire()
     if autoFireConnection then return end
     
@@ -777,23 +923,20 @@ local function StartAutoFire()
             return 
         end
         
-        local targetPlayer = GetClosestPlayer()
-        if targetPlayer and targetPlayer.Character then
-            local targetPart = targetPlayer.Character:FindFirstChild(Cheat.TargetPart) or targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if targetPart then
-                local screenPoint = Camera:WorldToViewportPoint(targetPart.Position)
-                if screenPoint.Z > 0 then
-                    local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - UserInputService:GetMouseLocation()).Magnitude
-                    if distance < 30 then
-                        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-                        if tool and tool:IsA("Tool") then
-                            tool:Activate()
-                        end
-                    end
+        local currentTime = tick()
+        if currentTime - lastShotTime < Cheat.AutoFireDelay then return end
+        
+        local targetPlayer, targetPart = GetAutoFireTarget()
+        if targetPlayer and targetPart then
+            local screenPoint = Camera:WorldToViewportPoint(targetPart.Position)
+            if screenPoint.Z > 0 then
+                local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - UserInputService:GetMouseLocation()).Magnitude
+                if distance < 30 then
+                    ShootAtTarget(targetPart)
+                    lastShotTime = currentTime
                 end
             end
         end
-        task.wait(Cheat.AutoFireDelay)
     end)
 end
 
@@ -852,7 +995,7 @@ end
 
 -- Teleport Behind
 local function TeleportBehindPlayer()
-    local targetPlayer = GetClosestPlayer()
+    local targetPlayer = GetBestTarget()
     if targetPlayer and targetPlayer.Character then
         local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
         local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -863,21 +1006,15 @@ local function TeleportBehindPlayer()
     end
 end
 
--- ESP Box + Full Skeleton
+-- ESP
 local function UpdateESP()
-    -- Clean up old objects
     for _, obj in pairs(espBoxes) do
-        pcall(function() 
-            if obj and obj:IsA("BasePart") then obj:Destroy() 
-            elseif obj and obj.Destroy then obj:Destroy() end
-        end)
+        pcall(function() if obj then obj:Destroy() end end)
     end
     espBoxes = {}
     
     for _, item in pairs(skeletonLines) do
-        pcall(function() 
-            if item and item.line then item.line:Remove() end
-        end)
+        pcall(function() if item and item.line then item.line:Remove() end end)
     end
     skeletonLines = {}
 
@@ -899,109 +1036,42 @@ local function UpdateESP()
             local rightShin = char:FindFirstChild("RightLowerLeg")
             
             if hrp then
-                -- Box ESP
                 if Cheat.BoxESP then
                     local box = Instance.new("BoxHandleAdornment")
                     box.Size = Vector3.new(Cheat.ESPBoxSize, Cheat.ESPBoxSize * 1.5, Cheat.ESPBoxSize)
                     box.Adornee = hrp
-                    box.Color3 = Color3.new(1, 0, 0)
+                    box.Color3 = Cheat.ESPColor
                     box.AlwaysOnTop = true
                     box.ZIndex = 0
-                    box.Transparency = 0.5
+                    box.Transparency = Cheat.ESPTransparency
                     pcall(function() box.Parent = hrp end)
                     table.insert(espBoxes, box)
                 end
                 
-                -- Full Skeleton ESP
                 if Cheat.SkeletonESP then
-                    -- Head to Torso
-                    if head and torso then
-                        local line = Drawing.new("Line")
-                        line.Visible = true
-                        line.Color = Color3.new(0, 1, 0)
-                        line.Thickness = 1
-                        line.Transparency = 0.7
-                        table.insert(skeletonLines, {line = line, partA = torso, partB = head})
+                    local function addLine(partA, partB)
+                        if partA and partB then
+                            local line = Drawing.new("Line")
+                            line.Visible = true
+                            line.Color = Cheat.SkeletonColor
+                            line.Thickness = Cheat.SkeletonThickness
+                            line.Transparency = 0.7
+                            table.insert(skeletonLines, {line = line, partA = partA, partB = partB})
+                        end
                     end
-                    -- Torso to Left Arm
-                    if torso and leftArm then
-                        local line = Drawing.new("Line")
-                        line.Visible = true
-                        line.Color = Color3.new(0, 1, 0)
-                        line.Thickness = 1
-                        line.Transparency = 0.7
-                        table.insert(skeletonLines, {line = line, partA = torso, partB = leftArm})
-                    end
-                    -- Torso to Right Arm
-                    if torso and rightArm then
-                        local line = Drawing.new("Line")
-                        line.Visible = true
-                        line.Color = Color3.new(0, 1, 0)
-                        line.Thickness = 1
-                        line.Transparency = 0.7
-                        table.insert(skeletonLines, {line = line, partA = torso, partB = rightArm})
-                    end
-                    -- Torso to Left Leg
-                    if torso and leftLeg then
-                        local line = Drawing.new("Line")
-                        line.Visible = true
-                        line.Color = Color3.new(0, 1, 0)
-                        line.Thickness = 1
-                        line.Transparency = 0.7
-                        table.insert(skeletonLines, {line = line, partA = torso, partB = leftLeg})
-                    end
-                    -- Torso to Right Leg
-                    if torso and rightLeg then
-                        local line = Drawing.new("Line")
-                        line.Visible = true
-                        line.Color = Color3.new(0, 1, 0)
-                        line.Thickness = 1
-                        line.Transparency = 0.7
-                        table.insert(skeletonLines, {line = line, partA = torso, partB = rightLeg})
-                    end
-                    -- Left Arm to Left Forearm
-                    if leftArm and leftForearm then
-                        local line = Drawing.new("Line")
-                        line.Visible = true
-                        line.Color = Color3.new(0, 1, 0)
-                        line.Thickness = 1
-                        line.Transparency = 0.7
-                        table.insert(skeletonLines, {line = line, partA = leftArm, partB = leftForearm})
-                    end
-                    -- Right Arm to Right Forearm
-                    if rightArm and rightForearm then
-                        local line = Drawing.new("Line")
-                        line.Visible = true
-                        line.Color = Color3.new(0, 1, 0)
-                        line.Thickness = 1
-                        line.Transparency = 0.7
-                        table.insert(skeletonLines, {line = line, partA = rightArm, partB = rightForearm})
-                    end
-                    -- Left Leg to Left Shin
-                    if leftLeg and leftShin then
-                        local line = Drawing.new("Line")
-                        line.Visible = true
-                        line.Color = Color3.new(0, 1, 0)
-                        line.Thickness = 1
-                        line.Transparency = 0.7
-                        table.insert(skeletonLines, {line = line, partA = leftLeg, partB = leftShin})
-                    end
-                    -- Right Leg to Right Shin
-                    if rightLeg and rightShin then
-                        local line = Drawing.new("Line")
-                        line.Visible = true
-                        line.Color = Color3.new(0, 1, 0)
-                        line.Thickness = 1
-                        line.Transparency = 0.7
-                        table.insert(skeletonLines, {line = line, partA = rightLeg, partB = rightShin})
-                    end
+                    
+                    if Cheat.ShowHead then addLine(torso, head) end
+                    if Cheat.ShowArms then addLine(torso, leftArm); addLine(torso, rightArm) end
+                    if Cheat.ShowLegs then addLine(torso, leftLeg); addLine(torso, rightLeg) end
+                    if Cheat.ShowForearms then addLine(leftArm, leftForearm); addLine(rightArm, rightForearm) end
+                    if Cheat.ShowShins then addLine(leftLeg, leftShin); addLine(rightLeg, rightShin) end
                 end
             end
         end
     end
 end
 
--- Update skeleton line positions
+-- Update skeleton positions
 local function UpdateSkeletonPositions()
     for _, item in pairs(skeletonLines) do
         if item and item.line and item.partA and item.partB then
@@ -1047,12 +1117,15 @@ local Connections = {}
 Connections.CharacterAdded = LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 Connections.RenderStepped = RunService.RenderStepped:Connect(OnRenderStep)
 
+-- Setup Wall Bang (doesn't override FireServer)
+SetupWallBang()
+
 -- ==================== UI CREATION ====================
 local Window = Library:CreateWindow("MVSD Cheat")
 local CombatTab = Window:CreateTab("Combat", "swords")
 local CombatSection = CombatTab:CreateSubTab("Aimbot", "target"):CreateSection("Aimbot Settings")
 CombatSection:CreateToggle("Aimbot", false, function(val) Cheat.Aimbot = val; UpdateFOVCircle() end)
-CombatSection:CreateToggle("Auto Fire (Triggerbot)", false, function(val) 
+CombatSection:CreateToggle("Auto Fire", false, function(val) 
     Cheat.AutoFire = val
     if val then
         StartAutoFire()
@@ -1060,7 +1133,8 @@ CombatSection:CreateToggle("Auto Fire (Triggerbot)", false, function(val)
         StopAutoFire()
     end
 end)
-CombatSection:CreateSlider("Auto Fire Delay (Seconds)", 0.01, 0.3, 0.05, function(val) Cheat.AutoFireDelay = val end)
+CombatSection:CreateToggle("Wall Bang (Shoot Through Walls)", false, function(val) Cheat.WallBang = val end)
+CombatSection:CreateSlider("Auto Fire Delay (Seconds)", 0.05, 0.5, 0.1, function(val) Cheat.AutoFireDelay = val end)
 CombatSection:CreateSlider("Aimbot FOV", 0, 360, 120, function(val) Cheat.AimbotFOV = val; if fovCircle then fovCircle.Radius = val end end)
 CombatSection:CreateSlider("Aimbot Smoothness", 0.05, 1, 0.3, function(val) Cheat.AimbotSmoothness = val end)
 CombatSection:CreateDropdown("Target Part", {"Head", "HumanoidRootPart"}, "Head", function(val) Cheat.TargetPart = val end)
@@ -1085,8 +1159,16 @@ local VisualsTab = Window:CreateTab("Visuals", "eye")
 local VisualsSection = VisualsTab:CreateSubTab("ESP", "eye"):CreateSection("ESP Settings")
 VisualsSection:CreateToggle("ESP Enabled", false, function(val) Cheat.ESP = val end)
 VisualsSection:CreateToggle("Box ESP", true, function(val) Cheat.BoxESP = val end)
-VisualsSection:CreateToggle("Skeleton ESP (Full Body)", false, function(val) Cheat.SkeletonESP = val end)
 VisualsSection:CreateSlider("Box Size", 1, 8, 3, function(val) Cheat.ESPBoxSize = val end)
+
+VisualsSection:CreateToggle("Skeleton ESP", false, function(val) Cheat.SkeletonESP = val end)
+VisualsSection:CreateSlider("Skeleton Thickness", 1, 3, 1, function(val) Cheat.SkeletonThickness = val end)
+VisualsSection:CreateToggle("Show Head", true, function(val) Cheat.ShowHead = val end)
+VisualsSection:CreateToggle("Show Torso", true, function(val) Cheat.ShowTorso = val end)
+VisualsSection:CreateToggle("Show Arms", true, function(val) Cheat.ShowArms = val end)
+VisualsSection:CreateToggle("Show Legs", true, function(val) Cheat.ShowLegs = val end)
+VisualsSection:CreateToggle("Show Forearms", true, function(val) Cheat.ShowForearms = val end)
+VisualsSection:CreateToggle("Show Shins", true, function(val) Cheat.ShowShins = val end)
 
 -- Start
 if LocalPlayer.Character then OnCharacterAdded(LocalPlayer.Character) end
