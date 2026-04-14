@@ -1,4 +1,4 @@
--- main.lua (FULLY FIXED - Wall Bang works without FireServer override)
+-- main.lua (FULLY FIXED - No errors, proper function order)
 -- Murderers VS Sheriffs DUELS - Cheat Script
 
 -- ==================== UI LIBRARY ====================
@@ -716,10 +716,42 @@ local skeletonLines = {}
 local fovCircle = nil
 local lastShotTime = 0
 
--- Wall Bang: Store the original FireServer (we're not overriding, just using as reference)
-local originalFireServer = ShootGunRemote and ShootGunRemote.FireServer
+-- Helper functions (defined BEFORE they are used)
 
--- Function to get the best target position (for wall bang)
+-- Get character ray origin (from your decompiled script)
+local function GetCharacterRayOrigin()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    return (hrp.CFrame * CFrame.new(0, 0, hrp.Size.Z / 2)).Position
+end
+
+-- Get closest enemy to crosshair
+local function GetBestTarget()
+    local bestTarget = nil
+    local bestScore = Cheat.AimbotFOV
+    local mouseLocation = UserInputService:GetMouseLocation()
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local part = player.Character:FindFirstChild(Cheat.TargetPart) or player.Character:FindFirstChild("HumanoidRootPart")
+            if part then
+                local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
+                if onScreen then
+                    local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - mouseLocation).Magnitude
+                    if distance < bestScore then
+                        bestScore = distance
+                        bestTarget = part
+                    end
+                end
+            end
+        end
+    end
+    return bestTarget
+end
+
+-- Get best target position (for wall bang)
 local function GetBestTargetPosition()
     local bestTarget = nil
     local bestDistance = Cheat.AimbotFOV
@@ -744,36 +776,6 @@ local function GetBestTargetPosition()
     return bestTarget
 end
 
--- Wall Bang: Hook the mouse click to redirect shots
-local function SetupWallBang()
-    -- Instead of overriding FireServer, we'll hook into UserInputService
-    -- to detect when the player clicks and redirect the shot
-    local mouseButtonDown = false
-    
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        
-        -- Check for left mouse button click
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            if Cheat.WallBang then
-                -- Get the best target
-                local targetPart = GetBestTargetPosition()
-                if targetPart and ShootGunRemote then
-                    local origin = GetCharacterRayOrigin()
-                    if origin then
-                        -- Shoot directly at the target through walls
-                        pcall(function()
-                            ShootGunRemote:FireServer(origin, targetPart.Position, targetPart, targetPart.Position)
-                        end)
-                        -- Prevent the normal shot from firing
-                        return
-                    end
-                end
-            end
-        end
-    end)
-end
-
 -- Raycast for visibility check
 local function IsVisible(origin, targetPart)
     local raycastParams = RaycastParams.new()
@@ -793,55 +795,19 @@ local function IsVisible(origin, targetPart)
     return true
 end
 
--- Get character ray origin
-local function GetCharacterRayOrigin()
-    local char = LocalPlayer.Character
-    if not char then return nil end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    return (hrp.CFrame * CFrame.new(0, 0, hrp.Size.Z / 2)).Position
-end
-
--- Get closest enemy to crosshair
-local function GetBestTarget()
-    local bestTarget = nil
-    local bestScore = Cheat.AimbotFOV
-    local mouseLocation = UserInputService:GetMouseLocation()
-    
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
-            local part = player.Character:FindFirstChild(Cheat.TargetPart) or player.Character:FindFirstChild("HumanoidRootPart")
-            if part then
-                local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
-                if onScreen then
-                    local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - mouseLocation).Magnitude
-                    if distance < bestScore then
-                        bestScore = distance
-                        bestTarget = player
-                    end
-                end
-            end
-        end
-    end
-    return bestTarget
-end
-
 -- Get target for auto-fire
 local function GetAutoFireTarget()
-    local targetPlayer = GetBestTarget()
-    if targetPlayer and targetPlayer.Character then
-        local targetPart = targetPlayer.Character:FindFirstChild(Cheat.TargetPart) or targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if targetPart and LocalPlayer.Character then
-            local origin = GetCharacterRayOrigin()
-            if origin then
-                local visible = IsVisible(origin, targetPart)
-                if visible or Cheat.WallBang then
-                    return targetPlayer, targetPart
-                end
+    local targetPart = GetBestTarget()
+    if targetPart and targetPart.Parent and LocalPlayer.Character then
+        local origin = GetCharacterRayOrigin()
+        if origin then
+            local visible = IsVisible(origin, targetPart)
+            if visible or Cheat.WallBang then
+                return targetPart
             end
         end
     end
-    return nil, nil
+    return nil
 end
 
 -- Shoot function
@@ -864,6 +830,30 @@ local function ShootAtTarget(targetPart)
         ShootGunRemote:FireServer(origin, adjustedTarget, targetPart, targetPos)
     end)
     return true
+end
+
+-- Wall Bang: Hook the mouse click to redirect shots
+local function SetupWallBang()
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        -- Check for left mouse button click
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if Cheat.WallBang then
+                -- Get the best target
+                local targetPart = GetBestTargetPosition()
+                if targetPart and ShootGunRemote then
+                    local origin = GetCharacterRayOrigin()
+                    if origin then
+                        -- Shoot directly at the target through walls
+                        pcall(function()
+                            ShootGunRemote:FireServer(origin, targetPart.Position, targetPart, targetPart.Position)
+                        end)
+                    end
+                end
+            end
+        end
+    end)
 end
 
 -- FOV Circle
@@ -893,18 +883,15 @@ end
 -- Aimbot
 local function UpdateAimbot()
     if not Cheat.Aimbot then return end
-    local targetPlayer = GetBestTarget()
-    if targetPlayer and targetPlayer.Character then
-        local targetPart = targetPlayer.Character:FindFirstChild(Cheat.TargetPart) or targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if targetPart then
-            local targetScreen = Camera:WorldToViewportPoint(targetPart.Position)
-            if targetScreen.Z > 0 then
-                local mousePos = UserInputService:GetMouseLocation()
-                local delta = Vector2.new(targetScreen.X - mousePos.X, targetScreen.Y - mousePos.Y)
-                if delta.Magnitude > 1 then
-                    local smoothDelta = delta * Cheat.AimbotSmoothness
-                    mousemoverel(smoothDelta.X, smoothDelta.Y)
-                end
+    local targetPart = GetBestTarget()
+    if targetPart then
+        local targetScreen = Camera:WorldToViewportPoint(targetPart.Position)
+        if targetScreen.Z > 0 then
+            local mousePos = UserInputService:GetMouseLocation()
+            local delta = Vector2.new(targetScreen.X - mousePos.X, targetScreen.Y - mousePos.Y)
+            if delta.Magnitude > 1 then
+                local smoothDelta = delta * Cheat.AimbotSmoothness
+                mousemoverel(smoothDelta.X, smoothDelta.Y)
             end
         end
     end
@@ -926,8 +913,8 @@ local function StartAutoFire()
         local currentTime = tick()
         if currentTime - lastShotTime < Cheat.AutoFireDelay then return end
         
-        local targetPlayer, targetPart = GetAutoFireTarget()
-        if targetPlayer and targetPart then
+        local targetPart = GetAutoFireTarget()
+        if targetPart then
             local screenPoint = Camera:WorldToViewportPoint(targetPart.Position)
             if screenPoint.Z > 0 then
                 local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - UserInputService:GetMouseLocation()).Magnitude
@@ -995,9 +982,9 @@ end
 
 -- Teleport Behind
 local function TeleportBehindPlayer()
-    local targetPlayer = GetBestTarget()
-    if targetPlayer and targetPlayer.Character then
-        local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local targetPart = GetBestTarget()
+    if targetPart and targetPart.Parent then
+        local targetHRP = targetPart.Parent:FindFirstChild("HumanoidRootPart")
         local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if targetHRP and myHRP then
             local behindPos = targetHRP.Position - targetHRP.CFrame.LookVector * 5
@@ -1117,7 +1104,7 @@ local Connections = {}
 Connections.CharacterAdded = LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 Connections.RenderStepped = RunService.RenderStepped:Connect(OnRenderStep)
 
--- Setup Wall Bang (doesn't override FireServer)
+-- Setup Wall Bang (this is safe - no FireServer override)
 SetupWallBang()
 
 -- ==================== UI CREATION ====================
