@@ -1,4 +1,4 @@
--- main.lua (FINAL - Fixed Transparency + Proper Keybind Toggles)
+-- main.lua (FINAL - Fixed Toggle ON Issue + Config Last)
 -- Murderers VS Sheriffs DUELS - Cheat Script
 
 -- ==================== UI LIBRARY ====================
@@ -1092,7 +1092,6 @@ local Camera = Workspace.CurrentCamera
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
--- Find ShootGun remote
 local ShootGunRemote = nil
 local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
 if Remotes then
@@ -1127,7 +1126,6 @@ local Cheat = {
     TargetPart = "Head",
     AutoFireDelay = 0.1,
     WalkSpeed = 16,
-    Invisible = false,
 }
 
 -- Variables
@@ -1139,7 +1137,6 @@ local fovCircle = nil
 local lastShotTime = 0
 local espHue = 0
 local skeletonHue = 0
-local originalWalkSpeed = 16
 
 -- Keybind variables
 local keybinds = {
@@ -1149,11 +1146,10 @@ local keybinds = {
     NoClip = Enum.KeyCode.V,
     Fly = Enum.KeyCode.B,
     ESP = Enum.KeyCode.N,
-    Invisible = Enum.KeyCode.I,
     SpeedBoost = Enum.KeyCode.K,
 }
 
--- UI Element References (for syncing)
+-- UI Element References
 local uiElements = {
     AimbotToggle = nil,
     AutoFireToggle = nil,
@@ -1189,14 +1185,12 @@ local ConfigData = {
     TargetPart = "Head",
     AutoFireDelay = 0.1,
     WalkSpeed = 16,
-    Invisible = false,
     AimbotKey = "X",
     AutoFireKey = "Z",
     WallBangKey = "C",
     NoClipKey = "V",
     FlyKey = "B",
     ESPKey = "N",
-    InvisibleKey = "I",
     SpeedBoostKey = "K",
     ESPColorR = 1,
     ESPColorG = 0,
@@ -1231,14 +1225,12 @@ local function SaveConfig()
     ConfigData.TargetPart = Cheat.TargetPart
     ConfigData.AutoFireDelay = Cheat.AutoFireDelay
     ConfigData.WalkSpeed = Cheat.WalkSpeed
-    ConfigData.Invisible = Cheat.Invisible
     ConfigData.AimbotKey = keybinds.Aimbot.Name
     ConfigData.AutoFireKey = keybinds.AutoFire.Name
     ConfigData.WallBangKey = keybinds.WallBang.Name
     ConfigData.NoClipKey = keybinds.NoClip.Name
     ConfigData.FlyKey = keybinds.Fly.Name
     ConfigData.ESPKey = keybinds.ESP.Name
-    ConfigData.InvisibleKey = keybinds.Invisible.Name
     ConfigData.SpeedBoostKey = keybinds.SpeedBoost.Name
     ConfigData.ESPColorR = Cheat.ESPColor.R
     ConfigData.ESPColorG = Cheat.ESPColor.G
@@ -1294,7 +1286,6 @@ local function LoadConfig()
         Cheat.TargetPart = ConfigData.TargetPart
         Cheat.AutoFireDelay = ConfigData.AutoFireDelay
         Cheat.WalkSpeed = ConfigData.WalkSpeed
-        Cheat.Invisible = ConfigData.Invisible
         
         if ConfigData.AimbotKey then
             keybinds.Aimbot = Enum.KeyCode[ConfigData.AimbotKey] or Enum.KeyCode.X
@@ -1313,9 +1304,6 @@ local function LoadConfig()
         end
         if ConfigData.ESPKey then
             keybinds.ESP = Enum.KeyCode[ConfigData.ESPKey] or Enum.KeyCode.N
-        end
-        if ConfigData.InvisibleKey then
-            keybinds.Invisible = Enum.KeyCode[ConfigData.InvisibleKey] or Enum.KeyCode.I
         end
         if ConfigData.SpeedBoostKey then
             keybinds.SpeedBoost = Enum.KeyCode[ConfigData.SpeedBoostKey] or Enum.KeyCode.K
@@ -1447,7 +1435,6 @@ local function ShootAtTarget(targetPart)
     return true
 end
 
--- Setup Wall Bang
 local function SetupWallBang()
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then
@@ -1469,7 +1456,6 @@ local function SetupWallBang()
     end)
 end
 
--- Update functions
 local function UpdateFOVCircle()
     if Cheat.ShowFOVCircle and Cheat.Aimbot then
         if not fovCircle then
@@ -1606,7 +1592,6 @@ local function UpdateFly()
     end
 end
 
--- Update Walk Speed
 local function UpdateWalkSpeed()
     local char = LocalPlayer.Character
     if char then
@@ -1617,20 +1602,6 @@ local function UpdateWalkSpeed()
     end
 end
 
--- FIXED: Update Invisible (Only affects BaseParts, not Humanoid)
-local function UpdateInvisible()
-    local char = LocalPlayer.Character
-    if char then
-        -- Only make BaseParts transparent, Humanoid doesn't have Transparency property
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.Transparency = Cheat.Invisible and 1 or 0
-            end
-        end
-    end
-end
-
--- Update ESP colors for RGB
 local function UpdateESPColors()
     if Cheat.ESPRainbow then
         espHue = (espHue + 0.005) % 1
@@ -1642,7 +1613,6 @@ local function UpdateESPColors()
     end
 end
 
--- ESP
 local function UpdateESP()
     UpdateESPColors()
 
@@ -1674,7 +1644,6 @@ local function UpdateESP()
             if char then
                 local hrp = char:FindFirstChild("HumanoidRootPart")
                 if hrp then
-                    -- Box ESP
                     if Cheat.BoxESP then
                         local box = Instance.new("BoxHandleAdornment")
                         box.Size = Vector3.new(Cheat.ESPBoxSize, Cheat.ESPBoxSize * 1.5, Cheat.ESPBoxSize)
@@ -1689,7 +1658,6 @@ local function UpdateESP()
                         table.insert(espBoxes, box)
                     end
 
-                    -- Skeleton ESP
                     if Cheat.SkeletonESP then
                         local head = char:FindFirstChild("Head")
                         local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
@@ -1779,7 +1747,6 @@ local function UpdateSkeletonPositions()
     end
 end
 
--- Speed Boost temporary function
 local function SpeedBoost()
     local char = LocalPlayer.Character
     if char then
@@ -1793,23 +1760,25 @@ local function SpeedBoost()
     end
 end
 
--- FIXED: Keybind system (toggles both enable and disable properly)
+-- FIXED: Keybind system - now toggles ON correctly
 local function SetupKeybinds()
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then
             return
         end
 
-        -- Aimbot Toggle (X)
         if input.KeyCode == keybinds.Aimbot then
             Cheat.Aimbot = not Cheat.Aimbot
             if uiElements.AimbotToggle then
                 uiElements.AimbotToggle.Set(Cheat.Aimbot)
             end
             UpdateFOVCircle()
-            print("Aimbot: " .. (Cheat.Aimbot and "ON" or "OFF"))
+            if Cheat.Aimbot then
+                print("Aimbot: ON ✓")
+            else
+                print("Aimbot: OFF ✗")
+            end
             
-        -- AutoFire Toggle (Z)
         elseif input.KeyCode == keybinds.AutoFire then
             Cheat.AutoFire = not Cheat.AutoFire
             if uiElements.AutoFireToggle then
@@ -1817,29 +1786,35 @@ local function SetupKeybinds()
             end
             if Cheat.AutoFire then
                 StartAutoFire()
+                print("Auto Fire: ON ✓")
             else
                 StopAutoFire()
+                print("Auto Fire: OFF ✗")
             end
-            print("Auto Fire: " .. (Cheat.AutoFire and "ON" or "OFF"))
             
-        -- WallBang Toggle (C)
         elseif input.KeyCode == keybinds.WallBang then
             Cheat.WallBang = not Cheat.WallBang
             if uiElements.WallBangToggle then
                 uiElements.WallBangToggle.Set(Cheat.WallBang)
             end
-            print("Wall Bang: " .. (Cheat.WallBang and "ON" or "OFF"))
+            if Cheat.WallBang then
+                print("Wall Bang: ON ✓")
+            else
+                print("Wall Bang: OFF ✗")
+            end
             
-        -- NoClip Toggle (V)
         elseif input.KeyCode == keybinds.NoClip then
             Cheat.NoClip = not Cheat.NoClip
             if uiElements.NoClipToggle then
                 uiElements.NoClipToggle.Set(Cheat.NoClip)
             end
             UpdateNoClip()
-            print("NoClip: " .. (Cheat.NoClip and "ON" or "OFF"))
+            if Cheat.NoClip then
+                print("NoClip: ON ✓")
+            else
+                print("NoClip: OFF ✗")
+            end
             
-        -- Fly Toggle (B)
         elseif input.KeyCode == keybinds.Fly then
             Cheat.Fly = not Cheat.Fly
             if uiElements.FlyToggle then
@@ -1849,29 +1824,26 @@ local function SetupKeybinds()
                 flyBodyVelocity:Destroy()
                 flyBodyVelocity = nil
             end
-            print("Fly: " .. (Cheat.Fly and "ON" or "OFF"))
+            if Cheat.Fly then
+                print("Fly: ON ✓")
+            else
+                print("Fly: OFF ✗")
+            end
             
-        -- ESP Toggle (N)
         elseif input.KeyCode == keybinds.ESP then
             Cheat.ESP = not Cheat.ESP
             if uiElements.ESPToggle then
                 uiElements.ESPToggle.Set(Cheat.ESP)
             end
-            print("ESP: " .. (Cheat.ESP and "ON" or "OFF"))
-            
-        -- Invisible Toggle (I)
-        elseif input.KeyCode == keybinds.Invisible then
-            Cheat.Invisible = not Cheat.Invisible
-            if uiElements.InvisibleToggle then
-                uiElements.InvisibleToggle.Set(Cheat.Invisible)
+            if Cheat.ESP then
+                print("ESP: ON ✓")
+            else
+                print("ESP: OFF ✗")
             end
-            UpdateInvisible()
-            print("Invisible: " .. (Cheat.Invisible and "ON" or "OFF"))
             
-        -- Speed Boost (K) - Temporary, not a toggle
         elseif input.KeyCode == keybinds.SpeedBoost then
             SpeedBoost()
-            print("Speed Boost Activated!")
+            print("⚡ Speed Boost Activated! ⚡")
         end
     end)
 end
@@ -1891,7 +1863,6 @@ local function OnRenderStep()
     UpdateSkeletonPositions()
     UpdateFOVCircle()
     UpdateWalkSpeed()
-    UpdateInvisible()
 end
 
 -- Character respawn handling
@@ -1903,19 +1874,9 @@ local function OnCharacterAdded(character)
         end
     end
     
-    -- Apply walk speed on respawn
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if humanoid then
         humanoid.WalkSpeed = Cheat.WalkSpeed
-    end
-    
-    -- Apply invisibility on respawn (only BaseParts)
-    if Cheat.Invisible then
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.Transparency = 1
-            end
-        end
     end
 end
 
@@ -1924,13 +1885,8 @@ local Connections = {}
 Connections.CharacterAdded = LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 Connections.RenderStepped = RunService.RenderStepped:Connect(OnRenderStep)
 
--- Setup Wall Bang
 SetupWallBang()
-
--- Setup Keybinds
 SetupKeybinds()
-
--- Load saved config
 LoadConfig()
 
 -- ==================== UI CREATION ====================
@@ -2026,15 +1982,6 @@ local walkSpeedSlider = MovementSection:CreateSlider("Walk Speed", 16, 100, Chea
     UpdateWalkSpeed()
 end)
 
-uiElements.InvisibleToggle = MovementSection:CreateToggle("Invisible", Cheat.Invisible, function(val)
-    Cheat.Invisible = val
-    UpdateInvisible()
-end)
-
-MovementSection:CreateKeybind("Invisible Keybind", keybinds.Invisible, function(key)
-    keybinds.Invisible = key
-end)
-
 MovementSection:CreateButton("Speed Boost (3s)", function()
     SpeedBoost()
 end)
@@ -2116,7 +2063,7 @@ local shinsToggle = bodySection:CreateToggle("Show Shins", Cheat.ShowShins, func
     Cheat.ShowShins = val
 end)
 
--- Settings Tab
+-- ==================== SETTINGS TAB (LAST TAB) ====================
 local SettingsTab = Window:CreateTab("Settings", "sliders")
 local SettingsSubTab = SettingsTab:CreateSubTab("Config", "save")
 local SettingsSection = SettingsSubTab:CreateSection("Configuration")
@@ -2133,7 +2080,6 @@ SettingsSection:CreateButton("Load Config", function()
         if uiElements.NoClipToggle then uiElements.NoClipToggle.Set(Cheat.NoClip) end
         if uiElements.FlyToggle then uiElements.FlyToggle.Set(Cheat.Fly) end
         if uiElements.ESPToggle then uiElements.ESPToggle.Set(Cheat.ESP) end
-        if uiElements.InvisibleToggle then uiElements.InvisibleToggle.Set(Cheat.Invisible) end
         
         autoFireDelaySlider.SetValue(Cheat.AutoFireDelay)
         aimbotSmoothnessSlider.SetValue(Cheat.AimbotSmoothness)
@@ -2161,7 +2107,6 @@ SettingsSection:CreateButton("Load Config", function()
         
         UpdateFOVCircle()
         UpdateWalkSpeed()
-        UpdateInvisible()
     end
 end)
 
@@ -2190,7 +2135,6 @@ SettingsSection:CreateButton("Reset to Defaults", function()
     Cheat.TargetPart = "Head"
     Cheat.AutoFireDelay = 0.1
     Cheat.WalkSpeed = 16
-    Cheat.Invisible = false
     Cheat.ESPColor = Color3.new(1, 0, 0)
     Cheat.SkeletonColor = Color3.new(0, 1, 0)
     
@@ -2200,7 +2144,6 @@ SettingsSection:CreateButton("Reset to Defaults", function()
     if uiElements.NoClipToggle then uiElements.NoClipToggle.Set(false) end
     if uiElements.FlyToggle then uiElements.FlyToggle.Set(false) end
     if uiElements.ESPToggle then uiElements.ESPToggle.Set(false) end
-    if uiElements.InvisibleToggle then uiElements.InvisibleToggle.Set(false) end
     
     autoFireDelaySlider.SetValue(0.1)
     aimbotSmoothnessSlider.SetValue(0.3)
@@ -2228,7 +2171,6 @@ SettingsSection:CreateButton("Reset to Defaults", function()
     
     UpdateFOVCircle()
     UpdateWalkSpeed()
-    UpdateInvisible()
     
     print("✅ Reset to default settings!")
 end)
@@ -2243,7 +2185,6 @@ InfoSection:CreateButton("Show Keybinds", function()
     print("V - Toggle NoClip")
     print("B - Toggle Fly")
     print("N - Toggle ESP")
-    print("I - Toggle Invisible")
     print("K - Speed Boost (3 seconds)")
     print("===========================")
 end)
@@ -2254,3 +2195,4 @@ if LocalPlayer.Character then
 end
 
 print("MVSD Cheat Loaded Successfully! Press Right Shift to open UI.")
+print("All features toggle ON and OFF with keybinds!")
